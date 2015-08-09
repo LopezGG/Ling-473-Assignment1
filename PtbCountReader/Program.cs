@@ -12,16 +12,19 @@ namespace PTBMatch
     {
         static int Main(string[] args)
         {
-            
+            string folderPath = "";
             if (args.Length == 0)
             {
-                    System.Console.WriteLine("Please enter the directory path to read files");
-                    return 1;      
+                folderPath = @"/corpora/LDC/LDC99T42/RAW/parsed/prd/wsj/14";
+            }
+            else
+            {
+                folderPath = @args[0];
             }
 
-            string folderPath = @args[0];
+
             string text = CollateFiles(folderPath);
-            
+
             //Looking for Sentences
             string pattern = @"\(S ";
             int Count = FindMatches(text, pattern);
@@ -93,27 +96,21 @@ namespace PTBMatch
         static int FindDVP(string input)
         {
 
-            //Ref: https://msdn.microsoft.com/en-us/library/bs2twtah.aspx#balancing_group_definition
-            //Ref: http://stackoverflow.com/questions/19693622/how-to-get-text-between-nested-parentheses
 
             int totalMatch = 0;
-            //This regex will match the outer most pattern VP
-            var regex = new Regex(@"
-                        \(VP [^\(]+                    # Match (Vp<space><anything other than open paranthesis>
-                        (
-                            [^()]+            # all chars except ()
-                            | (?<Level>\()    # or if ( then Level += 1
-                            | (?<-Level>\))   # or if ) then Level -= 1
-                        )+                    # Repeat (to go from inside to outside)
-                        (?(Level)(?!))        # zero-width negative lookahead assertion
-                        \)                    # Match )", RegexOptions.IgnorePatternWhitespace);
+            Regex rx = new Regex(@"\(VP ");
 
-            // This is to match with the inner Noun Phrase clause we need
-            foreach (Match c in regex.Matches(input))
+            foreach (Match match in rx.Matches(input))
             {
-                
+                int index = match.Index;
+                //if I get a grouped construct then I miss construct like (VP was (Vp God (NP...)(NP..) so I have a custom function to all occurances of VP
+                string newValue = getWholeConstruct(input, index);
+
+                //Ref for getting grouped constructs: https://msdn.microsoft.com/en-us/library/bs2twtah.aspx#balancing_group_definition
+                //Ref: http://stackoverflow.com/questions/19693622/how-to-get-text-between-nested-parentheses
+
                 var regex1 = new Regex(@"
-                        \(NP                    # Match (
+                        \(NP[\s]                    # Match (
                         (
                             [^()]+            # all chars except ()
                             | (?<Level>\()    # or if ( then Level += 1
@@ -121,35 +118,65 @@ namespace PTBMatch
                         )+                    # Repeat (to go from inside to outside)
                         (?(Level)(?!))        # zero-width negative lookahead assertion
                         \)                    # Match )", RegexOptions.IgnorePatternWhitespace);
-                MatchCollection mc = regex1.Matches(c.Value);
+                MatchCollection mc = regex1.Matches(newValue);
                 int li = 0;
-                // Here we verify that we have only two NP 
+
                 if (mc.Count == 2)
                 {
-                    
                     foreach (Match m in mc)
                     {
                         string newM = Regex.Replace(m.Value, @"\s+", "");
                         li = li + newM.Length;
                     }
-                }
 
-                string value = c.Value;
-                //Eliminate the space before checking for length
-                value = Regex.Replace(value, @"\s+", "");
+                    newValue = Regex.Replace(newValue, @"\s+", "");
+                    //Remove the first parantheis
+                    newValue = newValue.Substring(1);
 
-                //Remove the first parantheis
-                value = value.Substring(1);
-                int length = value.LastIndexOf(")") - value.IndexOf("(");
+                    //This is to avoid count verb in "VP verb"
+                    int length = newValue.LastIndexOf(")") - newValue.IndexOf("(");
 
-                if (length == li)
-                {
-                    totalMatch++;
+                    //Compare length of parts to see if they make up the whole VP clause
+                    if (length == li)
+                    {
+                        totalMatch++;
+                    }
                 }
             }
 
             return totalMatch;
 
+        }
+
+        static string getWholeConstruct(string input, int index)
+        {
+            string temp = "";
+            int openBr = 1;
+            int runner;
+            char[] inputChar = input.ToCharArray();
+            for (runner = index + 4; runner < inputChar.Length; runner++)
+            {
+                if (inputChar[runner].CompareTo('(') == 0)
+                {
+                    openBr = openBr + 1;
+
+                }
+                else if (inputChar[runner].CompareTo(')') == 0)
+                {
+                    openBr = openBr - 1;
+                }
+
+                if (openBr == 0)
+                {
+                    break;
+                }
+            }
+            if (runner < inputChar.Length)
+            {
+                temp = input.Substring(index, runner - index + 1);
+            }
+
+            return temp;
         }
     }
 }
